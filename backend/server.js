@@ -4,7 +4,7 @@ import logger from './src/utils/logger.js';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  logger.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
+  logger.error('UNCAUGHT EXCEPTION!   sutting down...');
   logger.error(err.name, err.message);
   process.exit(1);
 });
