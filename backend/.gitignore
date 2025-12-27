@@ -2,6 +2,7 @@
 node_modules/
 
 Manual.txt
+TestCase.txt
 demo.html
 
 # Environment variables

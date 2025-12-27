@@ -4,7 +4,7 @@ import logger from './src/utils/logger.js';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-  logger.error('UNCAUGHT EXCEPTION!   sutting down...');
+  logger.error('UNCAUGHT EXCEPTION!   shuting down the request point...');
   logger.error(err.name, err.message);
   process.exit(1);
 });
@@ -23,7 +23,7 @@ const startServer = async () => {
     
     // Handle unhandled rejections
     process.on('unhandledRejection', (err) => {
-      logger.error('UNHANDLED REJECTION! 💥 Shutting down...');
+      logger.error('UNHANDLED REJECTION!    Shutting down...');
       logger.error(err.name, err.message);
       server.close(() => {
         process.exit(1);
