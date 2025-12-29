@@ -12,7 +12,6 @@ import {
 } from '../config/constants.js';
 import logger from './logger.js';
 
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tempDir = path.join(__dirname, '../temp');
 
@@ -22,6 +21,63 @@ try {
 } catch (error) {
   logger.error(`Failed to create temp directory: ${error.message}`);
 }
+
+// Helper function to get file extension from URL or content type
+const getFileExtension = (url, contentType = '') => {
+  try {
+    // Try to get extension from URL
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const extensionMatch = pathname.match(/\.([a-zA-Z0-9]+)(?:[?#]|$)/);
+    
+    if (extensionMatch) {
+      const ext = extensionMatch[1].toLowerCase();
+      // Check if extension is reasonable length
+      if (ext.length <= 10) {
+        return ext;
+      }
+    }
+    
+    // Fallback to content type mapping
+    if (contentType) {
+      const mimeMap = {
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/bmp': 'bmp',
+        'application/pdf': 'pdf',
+        'application/msword': 'doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/vnd.ms-excel': 'xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'text/plain': 'txt',
+        'text/csv': 'csv',
+        'application/zip': 'zip',
+        'application/x-rar-compressed': 'rar',
+        'application/x-7z-compressed': '7z',
+        'application/x-tar': 'tar',
+        'application/gzip': 'gz',
+        'video/mp4': 'mp4',
+        'video/x-msvideo': 'avi',
+        'video/quicktime': 'mov',
+        'video/x-ms-wmv': 'wmv',
+        'audio/mpeg': 'mp3',
+        'audio/wav': 'wav',
+        'audio/aac': 'aac',
+        'audio/flac': 'flac'
+      };
+      
+      const cleanContentType = contentType.split(';')[0].trim();
+      return mimeMap[cleanContentType] || 'bin';
+    }
+    
+    return 'bin'; // Default binary extension
+  } catch {
+    return 'bin';
+  }
+};
 
 const isSupportedFileType = (contentType, url) => {
   if (!contentType) return true; // Allow unknown types
@@ -33,7 +89,11 @@ const isSupportedFileType = (contentType, url) => {
 };
 
 const sanitizeFileName = (fileName) => {
-  return fileName.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 255);
+  // Remove any path traversal attempts and invalid characters
+  return fileName
+    .replace(/\.\./g, '_') // Prevent directory traversal
+    .replace(/[\/\\:*?"<>|]/g, '_') // Replace invalid file characters
+    .substring(0, 255);
 };
 
 export const downloadFile = async (url, options = {}) => {
@@ -59,8 +119,9 @@ export const downloadFile = async (url, options = {}) => {
       timeout,
       maxContentLength: maxSize,
       headers: {
-        'User-Agent': 'File-Downloader/1.0'
-      }
+        'User-Agent': 'File-Downloader/1.0 (+https://github.com/filedownloader)'
+      },
+      validateStatus: (status) => status === 200
     });
     
     if (response.status !== 200) {
@@ -78,18 +139,32 @@ export const downloadFile = async (url, options = {}) => {
       throw new Error(`File size exceeds limit of ${maxSize / (1024 * 1024)}MB`);
     }
     
-    // Get original filename
+    // Get original filename from Content-Disposition header
     const contentDisposition = response.headers['content-disposition'];
-    if (contentDisposition && contentDisposition.includes('filename=')) {
-      const matches = contentDisposition.match(/filename="?([^"]+)"?/i);
-      if (matches) {
-        originalFileName = matches[1];
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (filenameMatch && filenameMatch[1]) {
+        originalFileName = filenameMatch[1].replace(/['"]/g, '');
       }
     }
     
+    // Fallback to extracting from URL
     if (!originalFileName) {
-      const urlPath = new URL(url).pathname;
-      originalFileName = path.basename(urlPath) || 'downloaded_file';
+      try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        const urlFileName = path.basename(pathname);
+        if (urlFileName && urlFileName.includes('.')) {
+          originalFileName = urlFileName;
+        }
+      } catch (error) {
+        // URL parsing failed, use default
+      }
+    }
+    
+    // Final fallback
+    if (!originalFileName) {
+      originalFileName = 'downloaded_file';
     }
     
     // Write stream with progress tracking
@@ -106,24 +181,32 @@ export const downloadFile = async (url, options = {}) => {
     
     await pipeline(response.data, writer);
     
-    // Final filename
-    const finalFileName = customFileName || 
-      sanitizeFileName(originalFileName) ||
-      `download_${Date.now()}`;
+    // Generate final filename
+    let finalFileName;
     
-    const finalExtension = path.extname(finalFileName) || 
-      `.${getFileExtension(url, contentType)}`;
+    if (customFileName) {
+      finalFileName = customFileName;
+    } else {
+      finalFileName = sanitizeFileName(originalFileName);
+    }
     
-    const finalName = path.extname(finalFileName) ? 
-      finalFileName : `${finalFileName}${finalExtension}`;
+    // Ensure file has an extension
+    const hasExtension = path.extname(finalFileName);
+    if (!hasExtension) {
+      const extension = getFileExtension(url, contentType);
+      if (extension !== 'bin') {
+        finalFileName = `${finalFileName}.${extension}`;
+      }
+    }
     
-    const finalPath = path.join(tempDir, `${tempFileName}_${finalName}`);
+    // Rename temp file with final name
+    const finalPath = path.join(tempDir, `${tempFileName}_${finalFileName}`);
     await fs.rename(tempPath, finalPath);
     
     return {
       success: true,
       filePath: finalPath,
-      fileName: finalName,
+      fileName: finalFileName,
       fileSize,
       contentType,
       originalUrl: url
@@ -132,12 +215,22 @@ export const downloadFile = async (url, options = {}) => {
   } catch (error) {
     // Clean up temp file if exists
     try {
-      await fs.unlink(tempPath);
+      await fs.unlink(tempPath).catch(() => {});
     } catch (cleanupError) {
       logger.error(`Failed to cleanup temp file: ${cleanupError.message}`);
     }
     
-    throw error;
+    // Enhance error messages
+    let errorMessage = error.message;
+    if (error.code === 'ECONNABORTED') {
+      errorMessage = 'Download timeout';
+    } else if (error.code === 'ENOTFOUND') {
+      errorMessage = 'Cannot resolve URL';
+    } else if (error.response) {
+      errorMessage = `Server responded with ${error.response.status}`;
+    }
+    
+    throw new Error(errorMessage);
   }
 };
 
@@ -148,13 +241,19 @@ export const downloadMultipleFiles = async (urls, options = {}) => {
   
   for (let i = 0; i < urls.length; i += maxConcurrent) {
     const batch = urls.slice(i, i + maxConcurrent);
-    const promises = batch.map(url => 
+    const batchPromises = batch.map(url => 
       downloadFile(url, options)
-        .then(result => results.push(result))
-        .catch(error => errors.push({ url, error: error.message }))
+        .then(result => {
+          results.push({ url, ...result });
+          return result;
+        })
+        .catch(error => {
+          errors.push({ url, error: error.message });
+          return null;
+        })
     );
     
-    await Promise.all(promises);
+    await Promise.all(batchPromises);
   }
   
   return { results, errors };
@@ -168,15 +267,19 @@ export const cleanupTempFiles = async (olderThanDays = 1) => {
     
     for (const file of files) {
       const filePath = path.join(tempDir, file);
-      const stats = await fs.stat(filePath);
-      
-      if (stats.mtimeMs < cutoff) {
-        await fs.unlink(filePath);
-        logger.info(`Cleaned up old temp file: ${file}`);
+      try {
+        const stats = await fs.stat(filePath);
+        
+        if (stats.mtimeMs < cutoff) {
+          await fs.unlink(filePath);
+          logger.info(`Cleaned up old temp file: ${file}`);
+        }
+      } catch (error) {
+        logger.error(`Failed to stat/cleanup file ${file}: ${error.message}`);
       }
     }
   } catch (error) {
-    logger.error(`Failed to cleanup temp files: ${error.message}`);
+    logger.error(`Failed to read temp directory: ${error.message}`);
   }
 };
 
@@ -186,3 +289,6 @@ cron.schedule('0 2 * * *', () => {
   logger.info('Running scheduled temp file cleanup');
   cleanupTempFiles(1);
 });
+
+// Export helper functions if needed
+export { getFileExtension, sanitizeFileName, isSupportedFileType };

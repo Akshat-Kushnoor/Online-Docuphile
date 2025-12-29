@@ -86,30 +86,3 @@ export const validateUrl = (url) => {
   }
 };
 
-export const getFileExtension = (url, contentType) => {
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-    const extension = pathname.split('.').pop().toLowerCase();
-    
-    if (extension && extension.length <= 6) {
-      return extension;
-    }
-    
-    // Fallback to content type
-    if (contentType) {
-      const mimeExtensions = {
-        'image/jpeg': 'jpg',
-        'image/png': 'png',
-        'application/pdf': 'pdf',
-        'application/zip': 'zip',
-        'text/plain': 'txt'
-      };
-      return mimeExtensions[contentType] || 'bin';
-    }
-    
-    return 'bin';
-  } catch {
-    return 'bin';
-  }
-};
