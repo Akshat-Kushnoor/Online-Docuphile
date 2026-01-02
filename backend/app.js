@@ -16,6 +16,7 @@ import downloadRoutes from './src/routes/downloadRoutes.js';
 // Middlewares
 import { notFound, errorHandler } from './src/middlewares/errorMiddleware.js';
 import { apiLimiter } from './src/middlewares/rateLimiter.js';
+import videoRoutes from './src/routes/videoRoutes.js';
 import logger from './src/utils/logger.js';
 
 // Config
@@ -79,6 +80,7 @@ app.get('/health', (req, res) => {
 // API routes with rate limiting
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/download', downloadRoutes);
+app.use('/api/v1/video', videoRoutes);
 
 // 404 handler
 app.use(notFound);
