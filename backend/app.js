@@ -17,6 +17,7 @@ import downloadRoutes from './src/routes/downloadRoutes.js';
 import { notFound, errorHandler } from './src/middlewares/errorMiddleware.js';
 import { apiLimiter } from './src/middlewares/rateLimiter.js';
 import videoRoutes from './src/routes/videoRoutes.js';
+import SystemCheck from './src/utils/systemCheck.js';
 import logger from './src/utils/logger.js';
 
 // Config
@@ -75,6 +76,30 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   });
+});
+
+app.get('/api/v1/health/video', async (req, res) => {
+  try {
+    const systemStatus = await SystemCheck.checkAll();
+    
+    res.status(200).json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      system: systemStatus,
+      requirements: {
+        ytdlp: 'Required for video downloads',
+        ffmpeg: 'Required for format conversion',
+        python: 'Required for yt-dlp'
+      },
+      status: systemStatus.allInstalled ? 'READY' : 'DEGRADED'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check system status',
+      error: error.message
+    });
+  }
 });
 
 // API routes with rate limiting
